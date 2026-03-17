@@ -1,0 +1,35 @@
+{
+    "description": "Contains mappings for the pool translator, and for ensuring that the pump is always turned on when redox or ph is turned on",
+    "translations": [
+        {
+            "sourceTopic": "pooltranslatortest/test1",
+            "destinationTopics":
+            [
+                "pooltranslatortestresult/cmnd/test1",
+                "pooltranslatortestresult/cmnd/test2"
+            ]
+        },
+        {
+            "sourceTopic": "pooltranslatortest/test2",
+            "destinationTopics":
+            [
+                "pooltranslatortestresult/stat/test1"
+            ]
+        },
+        {
+            "sourceTopic": "pooltranslatortest/test3",
+            "destinationTopics":
+            [
+                "pooltranslatortestresult/stat/test1"
+            ]
+        },
+        {
+            "sourceTopic": "pooltranslatortest/test4",
+            "ifMessageValue": "only if this is here",
+            "destinationTopics":
+            [
+                "pooltranslatortestresult/stat/test42"
+            ]
+        }
+    ]
+}

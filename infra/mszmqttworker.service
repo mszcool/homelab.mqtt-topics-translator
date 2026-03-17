@@ -1,0 +1,13 @@
+[Unit]
+Description=mszcool MQTT Translator Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/dotnet8/dotnet /home/mszworker/mqtttrans/MszCool.MqttTopicsTranslator.dll
+WorkingDirectory=/home/mszworker/mqtttrans
+User=mszworker
+Group=mszworker
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
