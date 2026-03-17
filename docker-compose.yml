@@ -1,0 +1,31 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  mqtt-translator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - mosquitto
+    environment:
+      # Overrides MqttTranslatorSettings.MqttServerConfig.Server in appsettings.json
+      - MqttTranslatorSettings__MqttServerConfig__Server=mosquitto
+      # Overrides MqttTranslatorSettings.MqttServerConfig.Port
+      - MqttTranslatorSettings__MqttServerConfig__Port=1883
+      # Overrides MqttTranslatorSettings.MqttServerConfig.ClientId
+      - MqttTranslatorSettings__MqttServerConfig__ClientId=MqttTranslatorDocker
+      # Overrides MqttTranslatorSettings.MqttServerConfig.Username
+      - MqttTranslatorSettings__MqttServerConfig__Username=
+      # Overrides MqttTranslatorSettings.MqttServerConfig.Password
+      - MqttTranslatorSettings__MqttServerConfig__Password=
+      # Path to the mapping config file inside the container
+      - MqttTranslatorSettings__MqttMappingConfigFile=/app/mapping/mapping.json
+    volumes:
+      # Mount your mapping config into the container
+      - ./src/sample-mapping.json:/app/mapping/mapping.json:ro
+    restart: unless-stopped
