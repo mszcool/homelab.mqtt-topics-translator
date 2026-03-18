@@ -2,11 +2,11 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # Copy csproj and restore first for layer caching
-COPY src/MszCool.MqttTopicsTranslator.csproj ./
+COPY src/mqtttranslator/MszCool.MqttTopicsTranslator.csproj ./
 RUN dotnet restore
 
 # Copy everything else and build
-COPY src/ ./
+COPY src/mqtttranslator/ ./
 RUN dotnet publish -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime

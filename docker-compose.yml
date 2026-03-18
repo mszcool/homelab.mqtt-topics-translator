@@ -27,5 +27,5 @@ services:
       - MqttTranslatorSettings__MqttMappingConfigFile=/app/mapping/mapping.json
     volumes:
       # Mount your mapping config into the container
-      - ./src/sample-mapping.json:/app/mapping/mapping.json:ro
+      - ./src/mqtttranslator/sample-mapping.json:/app/mapping/mapping.json:ro
     restart: unless-stopped
