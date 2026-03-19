@@ -54,7 +54,7 @@
         {
             "label": "test",
             "type": "shell",
-            "command": "dvm use 29.3.0 && docker compose up -d --build && echo 'Waiting for services to be ready...' && sleep 5 && dotnet test ${workspaceFolder}/src/mqtttranslator.tests/MszCool.MqttTopicsTranslator.Tests.csproj; TEST_EXIT=$?; docker compose down; exit $TEST_EXIT",
+            "command": "dvm use 29.3.0 && docker compose up -d --build && echo 'Waiting for services to be ready...' && sleep 5 && dotnet test ${workspaceFolder}/src/mqtttranslator.tests/MszCool.MqttTopicsTranslator.Tests.csproj --logger 'console;verbosity=detailed'; TEST_EXIT=$?; docker compose down; exit $TEST_EXIT",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

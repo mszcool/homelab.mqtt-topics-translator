@@ -6,6 +6,7 @@ using MQTTnet.Client;
 using MszCool.MqttTopicsTranslator.Entities;
 using Newtonsoft.Json;
 using Xunit;
+using Xunit.Abstractions;
 
 /// <summary>
 /// Integration tests that run against Docker Compose services (mosquitto + mqtt-translator).
@@ -19,9 +20,15 @@ public class MqttTranslationIntegrationTests : IAsyncLifetime
     private const int TimeoutSeconds = 30;
     private const string MappingFile = "sample-mapping.json";
 
+    private readonly ITestOutputHelper _output;
     private IMqttClient _publisherClient = null!;
     private IMqttClient _subscriberClient = null!;
     private MqttMappingConfig _mappingConfig = null!;
+
+    public MqttTranslationIntegrationTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
 
     public async Task InitializeAsync()
     {
@@ -63,25 +70,73 @@ public class MqttTranslationIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task Test1_SourceTranslatesToMultipleDestinations()
     {
-        // pooltranslatortest/test1 -> pooltranslatortestresult/cmnd/test1, pooltranslatortestresult/cmnd/test2
         var mapping = _mappingConfig.Translations[0];
         var payload = "hello-test1";
+        await AssertTranslation(mapping, payload);
+    }
 
-        var receivedTopics = new HashSet<string>();
+    [Fact]
+    public async Task Test2_SourceTranslatesToSingleDestination()
+    {
+        var mapping = _mappingConfig.Translations[1];
+        var payload = "hello-test2";
+        await AssertTranslation(mapping, payload);
+    }
+
+    [Fact]
+    public async Task Test3_AnotherSourceTranslatesToSameDestination()
+    {
+        var mapping = _mappingConfig.Translations[2];
+        var payload = "hello-test3";
+        await AssertTranslation(mapping, payload);
+    }
+
+    [Fact]
+    public async Task Test4_ConditionalTranslation_MatchingPayload_Succeeds()
+    {
+        var mapping = _mappingConfig.Translations[3];
+        var payload = mapping.IfMessageValue; // "only if this is here"
+        await AssertTranslation(mapping, payload);
+    }
+
+    [Fact]
+    public async Task Test4_ConditionalTranslation_NonMatchingPayload_NoTranslation()
+    {
+        var mapping = _mappingConfig.Translations[3];
+        var payload = "this should not match";
+        await AssertNoTranslation(mapping, payload);
+    }
+
+    /// <summary>
+    /// Publishes a message on the mapping's source topic and asserts that all
+    /// destination topics receive the expected payload within the timeout.
+    /// </summary>
+    private async Task AssertTranslation(MqttMapping mapping, string payload)
+    {
+        _output.WriteLine($"[PUBLISH]  topic='{mapping.SourceTopic}' payload='{payload}'");
+        _output.WriteLine($"[EXPECT]   {mapping.DestinationTopics.Count} destination(s): {string.Join(", ", mapping.DestinationTopics)}");
+
+        var receivedPayloads = new Dictionary<string, string>();
         var allReceived = new TaskCompletionSource<bool>();
+        var expectedCount = mapping.DestinationTopics.Count;
 
         _subscriberClient.ApplicationMessageReceivedAsync += args =>
         {
-            receivedTopics.Add(args.ApplicationMessage.Topic);
-            if (receivedTopics.Count >= mapping.DestinationTopics.Count)
-                allReceived.TrySetResult(true);
+            var msg = args.ApplicationMessage.ConvertPayloadToString();
+            var topic = args.ApplicationMessage.Topic;
+            if (mapping.DestinationTopics.Contains(topic) && msg == payload)
+            {
+                _output.WriteLine($"[RECEIVED] topic='{topic}' payload='{msg}'");
+                receivedPayloads[topic] = msg;
+                if (receivedPayloads.Count >= expectedCount)
+                    allReceived.TrySetResult(true);
+            }
             return Task.CompletedTask;
         };
 
         foreach (var dest in mapping.DestinationTopics)
             await _subscriberClient.SubscribeAsync(dest);
 
-        // Small delay to let subscriptions settle
         await Task.Delay(500);
 
         await _publisherClient.PublishAsync(new MqttApplicationMessageBuilder()
@@ -90,59 +145,43 @@ public class MqttTranslationIntegrationTests : IAsyncLifetime
             .Build());
 
         var completed = await Task.WhenAny(allReceived.Task, Task.Delay(TimeSpan.FromSeconds(TimeoutSeconds)));
-        Assert.True(completed == allReceived.Task, $"Timed out waiting for translated messages on destinations of {mapping.SourceTopic}");
+        Assert.True(completed == allReceived.Task,
+            $"Timed out waiting for translated messages on destinations of {mapping.SourceTopic}");
 
         foreach (var dest in mapping.DestinationTopics)
-            Assert.Contains(dest, receivedTopics);
-    }
-
-    [Fact]
-    public async Task Test2_SourceTranslatesToSingleDestination()
-    {
-        // pooltranslatortest/test2 -> pooltranslatortestresult/stat/test1
-        var mapping = _mappingConfig.Translations[1];
-        var payload = "hello-test2";
-
-        var received = new TaskCompletionSource<string>();
-
-        _subscriberClient.ApplicationMessageReceivedAsync += args =>
         {
-            if (args.ApplicationMessage.Topic == mapping.DestinationTopics[0])
-                received.TrySetResult(args.ApplicationMessage.ConvertPayloadToString());
-            return Task.CompletedTask;
-        };
+            Assert.True(receivedPayloads.ContainsKey(dest), $"No message received on {dest}");
+            Assert.Equal(payload, receivedPayloads[dest]);
+        }
 
-        await _subscriberClient.SubscribeAsync(mapping.DestinationTopics[0]);
-        await Task.Delay(500);
-
-        await _publisherClient.PublishAsync(new MqttApplicationMessageBuilder()
-            .WithTopic(mapping.SourceTopic)
-            .WithPayload(payload)
-            .Build());
-
-        var completed = await Task.WhenAny(received.Task, Task.Delay(TimeSpan.FromSeconds(TimeoutSeconds)));
-        Assert.True(completed == received.Task, $"Timed out waiting for translated message on {mapping.DestinationTopics[0]}");
-        Assert.Equal(payload, received.Task.Result);
+        _output.WriteLine($"[PASS]     All {expectedCount} destination(s) received the expected payload.");
     }
 
-    [Fact]
-    public async Task Test3_AnotherSourceTranslatesToSameDestination()
+    /// <summary>
+    /// Publishes a message on the mapping's source topic and asserts that NO
+    /// destination topic receives a matching message within a short window.
+    /// </summary>
+    private async Task AssertNoTranslation(MqttMapping mapping, string payload)
     {
-        // pooltranslatortest/test3 -> pooltranslatortestresult/stat/test1
-        var mapping = _mappingConfig.Translations[2];
-        var payload = "hello-test3";
+        _output.WriteLine($"[PUBLISH]  topic='{mapping.SourceTopic}' payload='{payload}'");
+        _output.WriteLine($"[EXPECT]   NO translation to: {string.Join(", ", mapping.DestinationTopics)}");
 
         var received = new TaskCompletionSource<string>();
 
         _subscriberClient.ApplicationMessageReceivedAsync += args =>
         {
             var msg = args.ApplicationMessage.ConvertPayloadToString();
-            if (args.ApplicationMessage.Topic == mapping.DestinationTopics[0] && msg == payload)
+            if (mapping.DestinationTopics.Contains(args.ApplicationMessage.Topic) && msg == payload)
+            {
+                _output.WriteLine($"[RECEIVED] topic='{args.ApplicationMessage.Topic}' payload='{msg}' (unexpected!)");
                 received.TrySetResult(msg);
+            }
             return Task.CompletedTask;
         };
 
-        await _subscriberClient.SubscribeAsync(mapping.DestinationTopics[0]);
+        foreach (var dest in mapping.DestinationTopics)
+            await _subscriberClient.SubscribeAsync(dest);
+
         await Task.Delay(500);
 
         await _publisherClient.PublishAsync(new MqttApplicationMessageBuilder()
@@ -150,66 +189,9 @@ public class MqttTranslationIntegrationTests : IAsyncLifetime
             .WithPayload(payload)
             .Build());
 
-        var completed = await Task.WhenAny(received.Task, Task.Delay(TimeSpan.FromSeconds(TimeoutSeconds)));
-        Assert.True(completed == received.Task, $"Timed out waiting for translated message on {mapping.DestinationTopics[0]}");
-        Assert.Equal(payload, received.Task.Result);
-    }
-
-    [Fact]
-    public async Task Test4_ConditionalTranslation_MatchingPayload_Succeeds()
-    {
-        // pooltranslatortest/test4 with matching ifMessageValue -> pooltranslatortestresult/stat/test42
-        var mapping = _mappingConfig.Translations[3];
-        var payload = mapping.IfMessageValue; // "only if this is here"
-
-        var received = new TaskCompletionSource<string>();
-
-        _subscriberClient.ApplicationMessageReceivedAsync += args =>
-        {
-            if (args.ApplicationMessage.Topic == mapping.DestinationTopics[0])
-                received.TrySetResult(args.ApplicationMessage.ConvertPayloadToString());
-            return Task.CompletedTask;
-        };
-
-        await _subscriberClient.SubscribeAsync(mapping.DestinationTopics[0]);
-        await Task.Delay(500);
-
-        await _publisherClient.PublishAsync(new MqttApplicationMessageBuilder()
-            .WithTopic(mapping.SourceTopic)
-            .WithPayload(payload)
-            .Build());
-
-        var completed = await Task.WhenAny(received.Task, Task.Delay(TimeSpan.FromSeconds(TimeoutSeconds)));
-        Assert.True(completed == received.Task, $"Timed out waiting for conditional translated message on {mapping.DestinationTopics[0]}");
-        Assert.Equal(payload, received.Task.Result);
-    }
-
-    [Fact]
-    public async Task Test4_ConditionalTranslation_NonMatchingPayload_NoTranslation()
-    {
-        // pooltranslatortest/test4 with non-matching payload -> should NOT arrive at destination
-        var mapping = _mappingConfig.Translations[3];
-        var payload = "this should not match";
-
-        var received = new TaskCompletionSource<string>();
-
-        _subscriberClient.ApplicationMessageReceivedAsync += args =>
-        {
-            if (args.ApplicationMessage.Topic == mapping.DestinationTopics[0])
-                received.TrySetResult(args.ApplicationMessage.ConvertPayloadToString());
-            return Task.CompletedTask;
-        };
-
-        await _subscriberClient.SubscribeAsync(mapping.DestinationTopics[0]);
-        await Task.Delay(500);
-
-        await _publisherClient.PublishAsync(new MqttApplicationMessageBuilder()
-            .WithTopic(mapping.SourceTopic)
-            .WithPayload(payload)
-            .Build());
-
-        // Wait a reasonable time — message should NOT arrive
         var completed = await Task.WhenAny(received.Task, Task.Delay(TimeSpan.FromSeconds(5)));
         Assert.False(completed == received.Task, "Message was translated when it should have been filtered out");
+
+        _output.WriteLine($"[PASS]     No translated message arrived (as expected).");
     }
 }
