@@ -1,5 +1,13 @@
 {
     "version": "2.0.0",
+    "inputs": [
+        {
+            "id": "dockerRepo",
+            "type": "promptString",
+            "description": "Docker Hub repository (e.g. mszcool/mqtt-topics-translator)",
+            "default": "mszcool/mqtt-topics-translator"
+        }
+    ],
     "tasks": [
         {
             "label": "build",
@@ -54,11 +62,20 @@
         {
             "label": "test",
             "type": "shell",
-            "command": "dvm use 29.3.0 && docker compose up -d --build && echo 'Waiting for services to be ready...' && sleep 5 && dotnet test ${workspaceFolder}/src/mqtttranslator.tests/MszCool.MqttTopicsTranslator.Tests.csproj --logger 'console;verbosity=detailed'; TEST_EXIT=$?; docker compose down; exit $TEST_EXIT",
+            "command": "${workspaceFolder}/scripts/docker-test.sh",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "docker-publish",
+            "type": "shell",
+            "command": "dvm use 29.3.0 && ${workspaceFolder}/scripts/docker-publish.sh '${input:dockerRepo}'",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
     ]
 }
