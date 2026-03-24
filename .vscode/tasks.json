@@ -71,7 +71,7 @@
         {
             "label": "docker-publish",
             "type": "shell",
-            "command": "dvm use 29.3.0 && ${workspaceFolder}/scripts/docker-publish.sh '${input:dockerRepo}'",
+            "command": "${workspaceFolder}/scripts/docker-publish.sh '${input:dockerRepo}'",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

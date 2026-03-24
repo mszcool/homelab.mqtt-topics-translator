@@ -15,13 +15,15 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 echo "==> Starting Docker Compose services..."
+# Initialize dvm if available (not present in CI environments)
 export DVM_DIR="${DVM_DIR:-$HOME/.dvm}"
-# dvm.sh has unguarded variables, so disable nounset while sourcing
-set +u
-# shellcheck source=/dev/null
-[ -s "$DVM_DIR/dvm.sh" ] && source "$DVM_DIR/dvm.sh"
-dvm use 29.3.0
-set -u
+if [[ -s "$DVM_DIR/dvm.sh" ]]; then
+    set +u
+    # shellcheck source=/dev/null
+    source "$DVM_DIR/dvm.sh"
+    dvm use 29.3.0
+    set -u
+fi
 docker compose up -d --build
 
 echo "==> Waiting for services to be ready..."
