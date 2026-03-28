@@ -73,8 +73,9 @@ namespace MszCool.MqttTopicsTranslator.Service
             _mqttClient.DisconnectedAsync += this.HandleDisconnectedAsync;
             _mqttClient.ApplicationMessageReceivedAsync += this.HandleIncomingMessage;
 
-            // Connecting to the MQTT Server...
-            await _mqttClient.ConnectAsync(_mqttClientOptions, cancellationToken);
+            // Connecting to the MQTT Server with retry logic.
+            // On container startup the network or the broker may not be ready yet.
+            await ConnectWithRetryAsync(cancellationToken);
 
             await base.StartAsync(cancellationToken);
         }
@@ -128,7 +129,27 @@ namespace MszCool.MqttTopicsTranslator.Service
             if (_shallReconnect)
             {
                 _logger.LogWarning("Disconnected from the MQTT server. Reconnecting...");
-                await _mqttClient.ConnectAsync(_mqttClientOptions);
+                await ConnectWithRetryAsync(CancellationToken.None);
+            }
+        }
+
+        private async Task ConnectWithRetryAsync(CancellationToken cancellationToken)
+        {
+            const int maxRetries = 10;
+            const int retryDelaySeconds = 5;
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    _logger.LogInformation("Connecting to MQTT broker (attempt {attempt}/{max})...", attempt, maxRetries);
+                    await _mqttClient.ConnectAsync(_mqttClientOptions, cancellationToken);
+                    return;
+                }
+                catch (Exception ex) when (attempt < maxRetries && !cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning(ex, "MQTT connection attempt {attempt}/{max} failed. Retrying in {delay}s...", attempt, maxRetries, retryDelaySeconds);
+                    await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds), cancellationToken);
+                }
             }
         }
 
