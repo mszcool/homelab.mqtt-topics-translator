@@ -166,7 +166,7 @@ namespace MszCool.MqttTopicsTranslator.Service
                         .WithTopic(destTopic)
                         .WithPayload(args.ApplicationMessage.PayloadSegment)
                         .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce)
-                        .WithRetainFlag()
+                        .WithRetainFlag(false)
                         .Build();
 
                     _logger.LogInformation("Publishing message to topic {topic}: {message}", destTopic, message.ConvertPayloadToString());
